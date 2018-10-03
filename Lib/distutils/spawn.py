@@ -14,6 +14,7 @@ import os
 from distutils.errors import DistutilsPlatformError, DistutilsExecError
 from distutils.debug import DEBUG
 from distutils import log
+from list2cmdline import list2cmdline
 
 def spawn(cmd, search_path=1, verbose=0, dry_run=0):
     """Run another program, specified as a command list 'cmd', in a new process.
@@ -47,17 +48,13 @@ def spawn(cmd, search_path=1, verbose=0, dry_run=0):
 def _nt_quote_args(args):
     """Quote command-line arguments for DOS/Windows conventions.
 
-    Just wraps every argument which contains blanks in double quotes, and
-    returns a new argument list.
+    Defer to list2cmdline as the logic is complex.
+    The previous implementation here failed to handle
+    -DG_LOG_DOMAIN="GEGL-"__FILE__ which was encountered in MSYS2
+    while building the gobject-introspection part of GEGL 0.3.4.
     """
-    # XXX this doesn't seem very robust to me -- but if the Windows guys
-    # say it'll work, I guess I'll have to accept it.  (What if an arg
-    # contains quotes?  What other magic characters, other than spaces,
-    # have to be escaped?  Is there an escaping mechanism other than
-    # quoting?)
     for i, arg in enumerate(args):
-        if ' ' in arg:
-            args[i] = '"%s"' % arg
+        args[i] = list2cmdline([args[i]])
     return args
 
 def _spawn_nt(cmd, search_path=1, verbose=0, dry_run=0):

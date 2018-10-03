@@ -81,11 +81,34 @@
  * information sources.
  */
 
+#ifndef PYTHONPATH
+#  define PYTHONPATH ".\\DLLs;.\\lib"
+#endif
+
 #ifndef LANDMARK
 #define LANDMARK "lib\\os.py"
 #endif
 
+#ifdef __MINGW32__
+
+static char *lib_python = "lib\\python" VERSION;
+
+#  undef LANDMARK
+#  define LANDMARK "os.py"
+
+#  define USE_POSIX_PREFIX
+
+#  ifdef Py_ENABLE_SHARED
+#    define USE_EXEC_PREFIX
+#  endif
+
+#endif
+
+
 static char prefix[MAXPATHLEN+1];
+#ifdef USE_EXEC_PREFIX
+static char exec_prefix[MAXPATHLEN+1];
+#endif
 static char progpath[MAXPATHLEN+1];
 static char dllpath[MAXPATHLEN+1];
 static char *module_search_path = NULL;
@@ -168,6 +191,69 @@ join(char *buffer, char *stuff)
     buffer[n+k] = '\0';
 }
 
+#ifdef USE_POSIX_PREFIX
+
+/* based on getpath.c but with paths relative to executable */
+/* search_for_prefix requires that path be no more than MAXPATHLEN
+   bytes long.
+   return: 1 if found; -1 if found build directory
+*/
+static int
+search_for_posix_prefix(char *argv0_path, char *home, char *_prefix)
+{
+    size_t n;
+
+    /* If PYTHONHOME is set, we believe it unconditionally */
+    if (home) {
+        char *delim;
+        strncpy(prefix, home, MAXPATHLEN);
+        delim = strchr(prefix, DELIM);
+        if (delim)
+            *delim = '\0';
+        join(prefix, lib_python);
+        join(prefix, LANDMARK);
+        return 1;
+    }
+
+    /* Check to see if argv[0] is in the build directory */
+    strcpy(prefix, argv0_path);
+    join(prefix, "Modules\\Setup");
+    if (exists(prefix)) {
+        char *vpath;
+        /* Check source directory if argv0_path is in the build directory. */
+        vpath = _Py_char2wchar(SRCDIR, NULL);
+        if (vpath != NULL) {
+            strcpy(prefix, argv0_path);
+            join(prefix, vpath);
+            PyMem_Free(vpath);
+            join(prefix, "Lib");
+            join(prefix, LANDMARK);
+            if (ismodule(prefix))
+                return -1;
+        }
+    }
+
+    /* Search from argv0_path, until root is found */
+    strcpy(prefix, argv0_path);
+    do {
+        n = strlen(prefix);
+        join(prefix, lib_python);
+        join(prefix, LANDMARK);
+        if (ismodule(prefix))
+            return 1;
+        prefix[n] = '\0';
+        reduce(prefix);
+    } while (prefix[0]);
+
+    /* Configure prefix is unused */
+    (void)_prefix;
+
+    /* Fail */
+    return 0;
+}
+
+#endif /*def USE_POSIX_PREFIX */
+
 /* gotlandmark only called by search_for_prefix, which ensures
    'prefix' is null terminated in bounds.  join() ensures
    'landmark' can not overflow prefix if too long.
@@ -206,6 +292,82 @@ search_for_prefix(char *argv0_path, char *landmark)
 /* a string loaded from the DLL at startup.*/
 extern const char *PyWin_DLLVersionString;
 
+#ifdef USE_EXEC_PREFIX
+
+/* based on getpath.c but with path relative to executabe */
+/* search_for exec_prefix requires that paths be no more than
+   MAXPATHLEN bytes long.
+   return: 1 if found; -1 if found build directory
+*/
+static int
+search_for_exec_prefix(char *argv0_path, char *home, char *_exec_prefix)
+{
+    size_t n;
+
+    /* If PYTHONHOME is set, we believe it unconditionally */
+    if (home) {
+        char *delim;
+        delim = srtchr(home, DELIM);
+        if (delim)
+            strncpy(exec_prefix, delim+1, MAXPATHLEN);
+        else
+            strncpy(exec_prefix, home, MAXPATHLEN);
+        join(exec_prefix, lib_python);
+        join(exec_prefix, "lib-dynload");
+        return 1;
+    }
+
+    /* Check to see if argv[0] is in the build directory. "pybuilddir.txt"
+       is written by setup.py and contains the relative path to the location
+       of shared library modules. */
+    strcpy(exec_prefix, argv0_path);
+    join(exec_prefix, "pybuilddir.txt");
+    if (exists(exec_prefix)) {
+        FILE *f = _Py_fopen(exec_prefix, "rb");
+        if (f == NULL)
+            errno = 0;
+        else {
+            char buf[MAXPATHLEN+1];
+            PyObject *decoded;
+            char rel_builddir_path[MAXPATHLEN+1];
+            n = fread(buf, 1, MAXPATHLEN, f);
+            buf[n] = '\0';
+            fclose(f);
+            decoded = PyUnicode_DecodeMBCS(buf, n, NULL);
+            if (decoded != NULL) {
+                Py_ssize_t k;
+                k = PyUnicode_AsWideChar(decoded,
+                                         rel_builddir_path, MAXPATHLEN);
+                Py_DECREF(decoded);
+                if (k >= 0) {
+                    rel_builddir_path[k] = L'\0';
+                    strcpy(exec_prefix, argv0_path);
+                    join(exec_prefix, rel_builddir_path);
+                    return -1;
+                }
+            }
+        }
+    }
+
+    /* Search from argv0_path, until root is found */
+    strcpy(exec_prefix, argv0_path);
+    do {
+        n = strlen(exec_prefix);
+        join(exec_prefix, lib_python);
+        join(exec_prefix, "lib-dynload");
+        if (exists(exec_prefix))
+            return 1;
+        exec_prefix[n] = '\0';
+        reduce(exec_prefix);
+    } while (exec_prefix[0]);
+
+    /* Configure exec_prefix is unused */
+    (void)_exec_prefix;
+
+    /* Fail */
+    return 0;
+}
+#endif /*def USE_EXEC_PREFIX*/
 
 /* Load a PYTHONPATH value from the registry.
    Load from either HKEY_LOCAL_MACHINE or HKEY_CURRENT_USER.
@@ -467,6 +629,12 @@ calculate_path(void)
     size_t bufsz;
     char *pythonhome = Py_GetPythonHome();
     char *envpath = Py_GETENV("PYTHONPATH");
+#ifdef USE_POSIX_PREFIX
+    int pfound;
+#endif
+#ifdef USE_EXEC_PREFIX
+    int efound;
+#endif
 
 #ifdef MS_WINDOWS
     int skiphome, skipdefault;
@@ -480,6 +648,17 @@ calculate_path(void)
     /* progpath guaranteed \0 terminated in MAXPATH+1 bytes. */
     strcpy(argv0_path, progpath);
     reduce(argv0_path);
+
+#ifdef USE_POSIX_PREFIX
+    pfound = search_for_posix_prefix(argv0_path, pythonhome, NULL);
+    if (!pfound) {
+        strncpy(prefix, argv0_path, MAXPATHLEN);
+        reduce(prefix);
+        join(prefix, lib_python);
+    }
+    else
+        reduce(prefix);
+#else
     if (pythonhome == NULL || *pythonhome == '\0') {
         if (search_for_prefix(argv0_path, LANDMARK))
             pythonhome = prefix;
@@ -488,10 +667,20 @@ calculate_path(void)
     }
     else
         strncpy(prefix, pythonhome, MAXPATHLEN);
+#endif
 
     if (envpath && *envpath == '\0')
         envpath = NULL;
 
+#ifdef USE_EXEC_PREFIX
+    efound = search_for_exec_prefix(argv0_path, pythonhome, NULL);
+    if (!efound) {
+        strncpy(exec_prefix, argv0_path, MAXPATHLEN);
+        reduce(exec_prefix);
+        join(exec_prefix, lib_python);
+        join(exec_prefix, "lib-dynload");
+    }
+#endif
 
 #ifdef MS_WINDOWS
     /* Calculate zip archive path */
@@ -546,6 +735,12 @@ calculate_path(void)
     }
     else
         bufsz = 0;
+#ifdef USE_POSIX_PREFIX
+    bufsz += strlen(prefix) + 1;
+#endif
+#ifdef USE_EXEC_PREFIX
+    bufsz +=strlen(exec_prefix) + 1;
+#endif
     bufsz += strlen(PYTHONPATH) + 1;
     bufsz += strlen(argv0_path) + 1;
 #ifdef MS_WINDOWS
@@ -590,6 +785,16 @@ calculate_path(void)
         buf = strchr(buf, '\0');
         *buf++ = DELIM;
     }
+#ifdef USE_POSIX_PREFIX
+    strcpy(buf, prefix);
+    buf = strchr(buf, '\0');
+    *buf++ = DELIM;
+#endif
+#ifdef USE_EXEC_PREFIX
+    strcpy(buf, exec_prefix);
+    buf = strchr(buf, L'\0');
+    *buf++ = DELIM;
+#endif
     if (userpath) {
         strcpy(buf, userpath);
         buf = strchr(buf, '\0');
@@ -652,6 +857,23 @@ calculate_path(void)
        on the path, and that our 'prefix' directory is
        the parent of that.
     */
+#ifdef USE_POSIX_PREFIX
+    if (pfound > 0) {
+        reduce(prefix);
+        reduce(prefix);
+    }
+    else
+        strcpy(prefix, argv0_path);
+#endif
+#ifdef USE_EXEC_PREFIX
+    if (efound > 0) {
+        reduce(exec_prefix);
+        reduce(exec_prefix);
+        reduce(exec_prefix);
+    }
+    else
+        strcpy(exec_prefix, argv0_path);
+#endif
     if (*prefix=='\0') {
         char lookBuf[MAXPATHLEN+1];
         char *look = buf - 1; /* 'buf' is at the end of the buffer */
@@ -702,7 +924,13 @@ Py_GetPrefix(void)
 char *
 Py_GetExecPrefix(void)
 {
+#ifdef USE_EXEC_PREFIX
+    if (!module_search_path)
+        calculate_path();
+    return exec_prefix;
+#else
     return Py_GetPrefix();
+#endif
 }
 
 char *

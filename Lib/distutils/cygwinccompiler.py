@@ -85,6 +85,7 @@ class CygwinCCompiler (UnixCCompiler):
     obj_extension = ".o"
     static_lib_extension = ".a"
     shared_lib_extension = ".dll"
+    dylib_lib_extension = ".dll.a"
     static_lib_format = "lib%s%s"
     shared_lib_format = "%s%s"
     exe_extension = ".exe"
@@ -158,6 +159,28 @@ class CygwinCCompiler (UnixCCompiler):
                 self.spawn(["windres", "-i", src, "-o", obj])
             except DistutilsExecError, msg:
                 raise CompileError, msg
+        elif ext == '.mc':
+            # Adapted from msvc9compiler:
+            #
+            # Compile .MC to .RC file to .RES file.
+            #   * '-h dir' specifies the directory for the generated include file
+            #   * '-r dir' specifies the target directory of the generated RC file and the binary message resource it includes
+            #
+            # For now (since there are no options to change this),
+            # we use the source-directory for the include file and
+            # the build directory for the RC file and message
+            # resources. This works at least for win32all.
+            h_dir = os.path.dirname(src)
+            rc_dir = os.path.dirname(obj)
+            try:
+                # first compile .MC to .RC and .H file
+                self.spawn(['windmc'] + ['-h', h_dir, '-r', rc_dir] + [src])
+                base, _ = os.path.splitext (os.path.basename (src))
+                rc_file = os.path.join (rc_dir, base + '.rc')
+                # then compile .RC to .RES file
+                self.spawn(['windres', '-i', rc_file, '-o', obj])
+            except DistutilsExecError, msg:
+                raise CompileError(msg)
         else: # for other files use the C-compiler
             try:
                 self.spawn(self.compiler_so + cc_args + [src, '-o', obj] +
@@ -271,12 +294,17 @@ class CygwinCCompiler (UnixCCompiler):
         if output_dir is None: output_dir = ''
         obj_names = []
         for src_name in source_filenames:
-            # use normcase to make sure '.rc' is really '.rc' and not '.RC'
-            (base, ext) = os.path.splitext (os.path.normcase(src_name))
-            if ext not in (self.src_extensions + ['.rc','.res']):
+            base, ext = os.path.splitext(src_name)
+            # use 'normcase' only for resource suffixes
+            ext_normcase = os.path.normcase(ext)
+            if ext_normcase in ['.rc','.res']:
+                ext = ext_normcase
+            if ext not in (self.src_extensions + ['.rc', '.res', '.mc']):
                 raise UnknownFileError, \
                       "unknown file type '%s' (from '%s')" % \
                       (ext, src_name)
+            base = os.path.splitdrive(base)[1] # Chop off the drive
+            base = base[os.path.isabs(base):]  # If abs, chop off leading /
             if strip_dir:
                 base = os.path.basename (base)
             if ext == '.res' or ext == '.rc':
@@ -324,9 +352,9 @@ class Mingw32CCompiler (CygwinCCompiler):
         else:
             no_cygwin = ''
 
-        self.set_executables(compiler='gcc%s -O -Wall' % no_cygwin,
-                             compiler_so='gcc%s -mdll -O -Wall' % no_cygwin,
-                             compiler_cxx='g++%s -O -Wall' % no_cygwin,
+        self.set_executables(compiler='gcc%s -O2 -Wall' % no_cygwin,
+                             compiler_so='gcc%s -mdll -O2 -Wall' % no_cygwin,
+                             compiler_cxx='g++%s -O2 -Wall' % no_cygwin,
                              linker_exe='gcc%s' % no_cygwin,
                              linker_so='%s%s %s %s'
                                     % (self.linker_dll, no_cygwin,
@@ -340,7 +368,7 @@ class Mingw32CCompiler (CygwinCCompiler):
 
         # Include the appropriate MSVC runtime library if Python was built
         # with MSVC 7.0 or later.
-        self.dll_libraries = get_msvcr()
+        self.dll_libraries = get_msvcr() or []
 
     # __init__ ()
 
@@ -415,7 +443,8 @@ def get_versions():
     from distutils.spawn import find_executable
     import re
 
-    gcc_exe = find_executable('gcc')
+    gcc_exe = os.environ.get('CC') or find_executable('gcc')
+    ld_exe = os.environ.get('LD') or find_executable('ld')
     if gcc_exe:
         out = os.popen(gcc_exe + ' -dumpversion','r')
         out_string = out.read()
@@ -425,9 +454,11 @@ def get_versions():
             gcc_version = LooseVersion(result.group(1))
         else:
             gcc_version = None
+        out = os.popen(gcc_exe + ' --print-prog-name ld','r')
+        ld_exe = out.read().decode('ascii').split()[0]
+        out.close()
     else:
         gcc_version = None
-    ld_exe = find_executable('ld')
     if ld_exe:
         out = os.popen(ld_exe + ' -v','r')
         out_string = out.read()
@@ -439,7 +470,7 @@ def get_versions():
             ld_version = None
     else:
         ld_version = None
-    dllwrap_exe = find_executable('dllwrap')
+    dllwrap_exe = os.environ.get('DLLWRAP') or find_executable('dllwrap')
     if dllwrap_exe:
         out = os.popen(dllwrap_exe + ' --version','r')
         out_string = out.read()

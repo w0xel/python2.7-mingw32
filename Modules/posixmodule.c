@@ -136,6 +136,25 @@ corresponding Unix manual entries for more information on calls.");
 #define HAVE_CWAIT      1
 #define HAVE_FSYNC      1
 #define fsync _commit
+#elif defined(__MINGW32__)	/* GCC for windows hosts */
+/* getlogin is detected by configure on mingw-w64 */
+/*#undef HAVE_GETLOGIN */
+/*#define HAVE_GETCWD	1 - detected by configure*/
+/*#define HAVE_GETPPID    1 */
+/*#define HAVE_GETLOGIN   1 */
+#define HAVE_SPAWNV	1
+/*#define HAVE_EXECV	1 - detected by configure*/
+#define HAVE_PIPE	1
+#define HAVE_POPEN	1
+#define HAVE_SYSTEM	1
+#define HAVE_CWAIT	1
+#define HAVE_FSYNC	1
+#define fsync _commit
+#include <windows.h>
+#include <winioctl.h>
+#ifndef _MAX_ENV
+#define _MAX_ENV	32767
+#endif
 #else
 #if defined(PYOS_OS2) && defined(PYCC_GCC) || defined(__VMS)
 /* Everything needed is defined in PC/os2emx/pyconfig.h or vms/pyconfig.h */
@@ -264,7 +283,7 @@ extern int lstat(const char *, struct stat *);
 #endif
 #endif
 
-#ifdef _MSC_VER
+#ifdef MS_WINDOWS
 #ifdef HAVE_DIRECT_H
 #include <direct.h>
 #endif
@@ -354,6 +373,8 @@ extern int lstat(const char *, struct stat *);
 #include <sys/mkdev.h>
 #endif
 #endif
+
+#include "iscygpty.h"
 
 
 #ifndef MS_WINDOWS
@@ -635,7 +656,7 @@ _PyVerify_fd_dup2(int fd1, int fd2)
 */
 #include <crt_externs.h>
 static char **environ;
-#elif !defined(_MSC_VER) && ( !defined(__WATCOMC__) || defined(__QNX__) )
+#elif !defined(MS_WINDOWS) && ( !defined(__WATCOMC__) || defined(__QNX__) )
 extern char **environ;
 #endif /* !_MSC_VER */
 
@@ -2200,6 +2221,8 @@ posix_getcwd(PyObject *self, PyObject *noargs)
     if (res == NULL)
         return posix_error();
 
+    Py_NormalizeSepsA(tmpbuf);
+
     dynamic_return = PyString_FromString(tmpbuf);
     free(tmpbuf);
 
@@ -2358,7 +2381,7 @@ posix_listdir(PyObject *self, PyObject *args)
             Py_END_ALLOW_THREADS
             /* FindNextFile sets error to ERROR_NO_MORE_FILES if
                it got to the end of the directory. */
-            if (!result && GetLastError() != ERROR_NO_MORE_FILES) {
+            if (!result && GetLastError() != 0 && GetLastError() != ERROR_NO_MORE_FILES) {
                 Py_DECREF(d);
                 win32_error_unicode("FindNextFileW", wnamebuf);
                 FindClose(hFindFile);
@@ -2426,7 +2449,7 @@ posix_listdir(PyObject *self, PyObject *args)
         Py_END_ALLOW_THREADS
         /* FindNextFile sets error to ERROR_NO_MORE_FILES if
            it got to the end of the directory. */
-        if (!result && GetLastError() != ERROR_NO_MORE_FILES) {
+        if (!result && GetLastError() != 0 && GetLastError() != ERROR_NO_MORE_FILES) {
             Py_DECREF(d);
             win32_error("FindNextFile", namebuf);
             FindClose(hFindFile);
@@ -6983,7 +7006,7 @@ posix_isatty(PyObject *self, PyObject *args)
         return NULL;
     if (!_PyVerify_fd(fd))
         return PyBool_FromLong(0);
-    return PyBool_FromLong(isatty(fd));
+    return PyBool_FromLong(isatty(fd) || is_cygpty(fd));
 }
 
 #ifdef HAVE_PIPE
@@ -9464,7 +9487,7 @@ all_ins(PyObject *d)
 }
 
 
-#if (defined(_MSC_VER) || defined(__WATCOMC__) || defined(__BORLANDC__)) && !defined(__QNX__)
+#if defined(MS_WINDOWS) && !defined(__QNX__)
 #define INITFUNC initnt
 #define MODNAME "nt"
 

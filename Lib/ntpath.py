@@ -25,9 +25,22 @@ __all__ = ["normcase","isabs","join","splitdrive","split","splitext",
 curdir = '.'
 pardir = '..'
 extsep = '.'
-sep = '\\'
+# Generally we prefer forwards slashes for MinGW-w64 Python,
+# but should probably defer to the C code and a set of #defines
+# with the following precedence and logic:
+# DIRSEP_MSYSTEM    = If MSYSTEM env. var is set then / otherwise \.
+# DIRSEP_ARGV0      = Whichever of / and \ is more prevalent in argv0
+#                     (if equal DIRSEP_FORWARDS or DIRSEP_BACKWARDS)
+# DIRSEP_FORWARDS   = Always /
+# DIRSEP_BACKWARDS  = Always \
+# .. note, UNC paths are always converted to backslashes.
+if sys.platform == "win32" and "MSYSTEM" in os.environ:
+    sep = '/'
+    altsep = '\\'
+else:
+    sep = '\\'
+    altsep = '/'
 pathsep = ';'
-altsep = '/'
 defpath = '.;C:\\bin'
 if 'ce' in sys.builtin_module_names:
     defpath = '\\Windows'
@@ -43,8 +56,8 @@ devnull = 'nul'
 def normcase(s):
     """Normalize case of pathname.
 
-    Makes all characters lowercase and all slashes into backslashes."""
-    return s.replace("/", "\\").lower()
+    Makes all characters lowercase and all os.altsep into os.sep."""
+    return s.replace(os.altsep, os.sep).lower()
 
 
 # Return whether a path is absolute.
@@ -61,7 +74,7 @@ def isabs(s):
 
 # Join two (or more) paths.
 def join(path, *paths):
-    """Join two or more pathname components, inserting "\\" as needed."""
+    """Join two or more pathname components, inserting sep as needed."""
     result_drive, result_path = splitdrive(path)
     for p in paths:
         p_drive, p_path = splitdrive(p)
@@ -81,7 +94,7 @@ def join(path, *paths):
             result_drive = p_drive
         # Second path is relative to the first
         if result_path and result_path[-1] not in '\\/':
-            result_path = result_path + '\\'
+            result_path = result_path + sep
         result_path = result_path + p_path
     ## add separator between UNC and non-absolute path
     if (result_path and result_path[0] not in '\\/' and
@@ -416,13 +429,19 @@ def normpath(path):
     """Normalize path, eliminating double slashes, etc."""
     # Preserve unicode (if path is unicode)
     backslash, dot = (u'\\', u'.') if isinstance(path, _unicode) else ('\\', '.')
+    isUNC = path.startswith('\\\\')
+    this_sep = sep
+    other_sep = altsep
+    if isUNC:
+        this_sep = backslash
+        other_sep = '/'
     if path.startswith(('\\\\.\\', '\\\\?\\')):
         # in the case of paths with these prefixes:
         # \\.\ -> device names
         # \\?\ -> literal paths
         # do not do any normalization, but return the path unchanged
         return path
-    path = path.replace("/", "\\")
+    path = path.replace(other_sep, this_sep)
     prefix, path = splitdrive(path)
     # We need to be careful here. If the prefix is empty, and the path starts
     # with a backslash, it could either be an absolute path on the current
@@ -435,15 +454,15 @@ def normpath(path):
     # is any better behaviour for such edge cases.
     if prefix == '':
         # No drive letter - preserve initial backslashes
-        while path[:1] == "\\":
-            prefix = prefix + backslash
+        while path[:1] == this_sep:
+            prefix = prefix + this_sep
             path = path[1:]
     else:
         # We have a drive letter - collapse initial backslashes
-        if path.startswith("\\"):
-            prefix = prefix + backslash
-            path = path.lstrip("\\")
-    comps = path.split("\\")
+        if path.startswith(sep):
+            prefix = prefix + this_sep
+            path = path.lstrip(this_sep)
+    comps = path.split(this_sep)
     i = 0
     while i < len(comps):
         if comps[i] in ('.', ''):
@@ -452,7 +471,7 @@ def normpath(path):
             if i > 0 and comps[i-1] != '..':
                 del comps[i-1:i+1]
                 i -= 1
-            elif i == 0 and prefix.endswith("\\"):
+            elif i == 0 and prefix.endswith(this_sep):
                 del comps[i]
             else:
                 i += 1
@@ -461,7 +480,7 @@ def normpath(path):
     # If the path is now empty, substitute '.'
     if not prefix and not comps:
         comps.append(dot)
-    return prefix + backslash.join(comps)
+    return prefix + this_sep.join(comps)
 
 
 # Return an absolute path.

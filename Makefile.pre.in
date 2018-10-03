@@ -86,9 +86,10 @@ ARFLAGS=	@ARFLAGS@
 # Extra C flags added for building the interpreter object files.
 CFLAGSFORSHARED=@CFLAGSFORSHARED@
 # C flags used for building the interpreter object files
-PY_CFLAGS=	$(CFLAGS) $(CPPFLAGS) $(CFLAGSFORSHARED) -DPy_BUILD_CORE
+PY_CFLAGS=	$(CFLAGS) $(CPPFLAGS) $(CFLAGSFORSHARED) -DPy_BUILD_CORE -D_WIN32_WINNT=0x0600 -DUSE_DYNFILEID
 
-
+# ; on Windows otherwise :
+DELIM=		@DELIM@
 # Machine-dependent subdirectories
 MACHDEP=	@MACHDEP@
 
@@ -103,6 +104,13 @@ exec_prefix=	@exec_prefix@
 
 # Install prefix for data files
 datarootdir=    @datarootdir@
+
+# Locations needed for semi-native fixup of sysconfig.
+srcdir_b2h=		@srcdir_b2h@
+VPATH_b2h=		@VPATH_b2h@
+abs_srcdir_b2h=		@abs_srcdir_b2h@
+abs_builddir_b2h=	@abs_builddir_b2h@
+prefix_b2h=		@prefix_b2h@
 
 # Expanded directories
 BINDIR=		@bindir@
@@ -225,7 +233,7 @@ COVERAGE_REPORT_OPTIONS=--no-branch-coverage --title "CPython lcov report"
 # Modules
 MODULE_OBJS=	\
 		Modules/config.o \
-		Modules/getpath.o \
+		@MODULE_GETPATH@ \
 		Modules/main.o \
 		Modules/gcmodule.o
 
@@ -304,7 +312,7 @@ PYTHON_OBJS=	\
 		Python/codecs.o \
 		Python/errors.o \
 		Python/frozen.o \
-		Python/frozenmain.o \
+		@PYTHON_OBJS_FROZENMAIN@ \
 		Python/future.o \
 		Python/getargs.o \
 		Python/getcompiler.o \
@@ -314,6 +322,7 @@ PYTHON_OBJS=	\
 		Python/graminit.o \
 		Python/import.o \
 		Python/importdl.o \
+		Python/iscygpty.o \
 		Python/marshal.o \
 		Python/modsupport.o \
 		Python/mystrtoul.o \
@@ -647,13 +656,21 @@ Modules/getbuildinfo.o: $(PARSER_OBJS) \
 	      -DGITBRANCH="\"`LC_ALL=C $(GITBRANCH)`\"" \
 	      -o $@ $(srcdir)/Modules/getbuildinfo.c
 
+# default sys.path calculations for posix platforms
 Modules/getpath.o: $(srcdir)/Modules/getpath.c Makefile
 	$(CC) -c $(PY_CFLAGS) -DPYTHONPATH='"$(PYTHONPATH)"' \
 		-DPREFIX='"$(prefix)"' \
 		-DEXEC_PREFIX='"$(exec_prefix)"' \
 		-DVERSION='"$(VERSION)"' \
-		-DVPATH='"$(VPATH)"' \
+		-DVPATH='"$(VPATH_b2h)"' \
 		-o $@ $(srcdir)/Modules/getpath.c
+
+# default sys.path calculations for windows platforms
+PC/getpathp.o: $(srcdir)/PC/getpathp.c Makefile
+	$(CC) -c $(PY_CORE_CFLAGS) \
+		-DVERSION='"$(VERSION)"' \
+		-DSRCDIR='"$(srcdir)"' \
+		-o $@ $(srcdir)/PC/getpathp.c
 
 Modules/python.o: $(srcdir)/Modules/python.c
 	$(MAINCC) -c $(PY_CFLAGS) -o $@ $(srcdir)/Modules/python.c
@@ -785,6 +802,7 @@ PYTHON_HEADERS= \
 		Include/import.h \
 		Include/intobject.h \
 		Include/intrcheck.h \
+		Include/iscygpty.h \
 		Include/iterobject.h \
 		Include/listobject.h \
 		Include/longintrepr.h \
@@ -976,9 +994,9 @@ bininstall:	altbininstall
 	then rm -f $(DESTDIR)$(BINDIR)/$(PYTHON); \
 	else true; \
 	fi
-	(cd $(DESTDIR)$(BINDIR); $(LN) -s python2$(EXE) $(PYTHON))
 	-rm -f $(DESTDIR)$(BINDIR)/python2$(EXE)
 	(cd $(DESTDIR)$(BINDIR); $(LN) -s python$(VERSION)$(EXE) python2$(EXE))
+	(cd $(DESTDIR)$(BINDIR); $(LN) -s python2$(EXE) $(PYTHON))
 	-rm -f $(DESTDIR)$(BINDIR)/python2-config
 	(cd $(DESTDIR)$(BINDIR); $(LN) -s python$(VERSION)-config python2-config)
 	-rm -f $(DESTDIR)$(BINDIR)/python-config
@@ -1004,6 +1022,7 @@ altbininstall:	$(BUILDPYTHON)
 	if test -f $(LDLIBRARY); then \
 		if test -n "$(DLLLIBRARY)" ; then \
 			$(INSTALL_SHARED) $(DLLLIBRARY) $(DESTDIR)$(BINDIR); \
+			mkdir -p $(DESTDIR)$(LIBPL); $(INSTALL_SHARED) $(LDLIBRARY) $(DESTDIR)$(LIBPL); \
 		else \
 			$(INSTALL_SHARED) $(LDLIBRARY) $(DESTDIR)$(LIBDIR)/$(INSTSONAME); \
 			if test $(LDLIBRARY) != $(INSTSONAME); then \
@@ -1069,6 +1088,7 @@ LIBSUBDIRS=	lib-tk lib-tk/test lib-tk/test/test_tkinter \
 		distutils distutils/command distutils/tests $(XMLLIBSUBDIRS) \
 		multiprocessing multiprocessing/dummy \
 		unittest unittest/test \
+		msilib \
 		lib-old \
 		curses pydoc_data $(MACHDEPS)
 libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
@@ -1169,12 +1189,15 @@ $(srcdir)/Lib/$(PLATDIR):
 	else \
 	  PYTHON_FOR_BUILD="$(PYTHON_FOR_BUILD)"; \
 	fi; \
-	cd $(srcdir)/Lib/$(PLATDIR); $(RUNSHARED) ./regen
+	cd $(srcdir)/Lib/$(PLATDIR); $(RUNSHARED) ./regen "$(CC)"
 
 python-config: $(srcdir)/Misc/python-config.in
 	# Substitution happens here, as the completely-expanded BINDIR
 	# is not available in configure
 	sed -e "s,@EXENAME@,$(BINDIR)/python$(VERSION)$(EXE)," < $(srcdir)/Misc/python-config.in >python-config
+	# Replace makefile compat. variable references with shell script compat. ones; $(VAR) -> ${VAR}
+	sed -e "s,\$$(\([A-Za-z0-9_]*\)),\$$\{\1\},g" < Misc/python-config.sh >python-config.sh
+	-sed -e "s,\$$(\([A-Za-z0-9_]*\)),\$$\{\1\},g" < Misc/python-config-u.sh >python-config-u.sh
 
 # Install the include files
 INCLDIRSTOMAKE=$(INCLUDEDIR) $(CONFINCLUDEDIR) $(INCLUDEPY) $(CONFINCLUDEPY)
@@ -1233,6 +1256,8 @@ libainstall:	@DEF_MAKE_RULE@ python-config
 	$(INSTALL_SCRIPT) $(srcdir)/Modules/makesetup $(DESTDIR)$(LIBPL)/makesetup
 	$(INSTALL_SCRIPT) $(srcdir)/install-sh $(DESTDIR)$(LIBPL)/install-sh
 	$(INSTALL_SCRIPT) python-config $(DESTDIR)$(BINDIR)/python$(VERSION)-config
+	$(INSTALL_SCRIPT) python-config.sh $(DESTDIR)$(BINDIR)/python-config.sh
+	-test -f python-config-u.sh && $(INSTALL_SCRIPT) python-config-u.sh $(DESTDIR)$(BINDIR)/python-config-u.sh
 	rm python-config
 	@if [ -s Modules/python.exp -a \
 		"`echo $(MACHDEP) | sed 's/^\(...\).*/\1/'`" = "aix" ]; then \
@@ -1261,6 +1286,12 @@ libainstall:	@DEF_MAKE_RULE@ python-config
 		;; \
 	esac
 
+ifeq ($(shell uname -o),Msys)
+DESTDIRFINAL=$(DESTDIR)
+else
+DESTDIRFINAL=$(DESTDIR)/
+endif
+
 # Install the dynamically loadable modules
 # This goes into $(exec_prefix)
 sharedinstall: sharedmods
@@ -1268,8 +1299,8 @@ sharedinstall: sharedmods
 	   	--prefix=$(prefix) \
 		--install-scripts=$(BINDIR) \
 		--install-platlib=$(DESTSHARED) \
-		--root=$(DESTDIR)/
-	-rm $(DESTDIR)$(DESTSHARED)/_sysconfigdata.py*
+		--root=$(DESTDIRFINAL)
+	-rm $(DESTDIRFINAL)$(DESTSHARED)/_sysconfigdata.py
 
 # Here are a couple of targets for MacOSX again, to install a full
 # framework-based Python. frameworkinstall installs everything, the
@@ -1341,7 +1372,7 @@ scriptsinstall:
 	$(PYTHON_FOR_BUILD) $(srcdir)/Tools/scripts/setup.py install \
 	--prefix=$(prefix) \
 	--install-scripts=$(BINDIR) \
-	--root=$(DESTDIR)/
+	--root=$(DESTDIRFINAL)
 
 # Build the toplevel Makefile
 Makefile.pre: Makefile.pre.in config.status

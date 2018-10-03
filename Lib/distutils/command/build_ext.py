@@ -180,7 +180,7 @@ class build_ext (Command):
         # for extensions under windows use different directories
         # for Release and Debug builds.
         # also Python's library directory must be appended to library_dirs
-        if os.name == 'nt':
+        if os.name == 'nt' and not self.plat_name.startswith(('mingw')):
             # the 'libs' directory is for binary installs - we assume that
             # must be the *native* platform.  But we don't really support
             # cross-compiling via a binary install anyway, so we let it go.
@@ -224,12 +224,13 @@ class build_ext (Command):
 
         # for extensions under Cygwin and AtheOS Python's library directory must be
         # appended to library_dirs
-        if sys.platform[:6] == 'cygwin' or sys.platform[:6] == 'atheos':
+        if sys.platform[:6] == 'cygwin' or sys.platform[:6] == 'atheos' or self.plat_name.startswith(('mingw')):
             if sys.executable.startswith(os.path.join(sys.exec_prefix, "bin")):
                 # building third party extensions
+                config_dir_name = os.path.basename(sysconfig.get_config_var('LIBPL'))
                 self.library_dirs.append(os.path.join(sys.prefix, "lib",
                                                       "python" + get_python_version(),
-                                                      "config"))
+                                                      config_dir_name))
             else:
                 # building python standard extensions
                 self.library_dirs.append('.')
@@ -700,6 +701,20 @@ class build_ext (Command):
         # pyconfig.h that MSVC groks.  The other Windows compilers all seem
         # to need it mentioned explicitly, though, so that's what we do.
         # Append '_d' to the python import library on debug builds.
+
+        # Use self.plat_name as it works even in case of
+        # cross-compilation (at least for mingw build).
+        if self.plat_name.startswith('mingw'):
+            from distutils import sysconfig
+            extra = []
+            for lib in (
+                sysconfig.get_config_var('BLDLIBRARY').split()
+                + sysconfig.get_config_var('SHLIBS').split()
+                ):
+                if lib.startswith('-l'):
+                    extra.append(lib[2:])
+            return ext.libraries + extra
+
         if sys.platform == "win32":
             from distutils.msvccompiler import MSVCCompiler
             if not isinstance(self.compiler, MSVCCompiler):
@@ -721,13 +736,6 @@ class build_ext (Command):
             # not at this time - AIM Apr01
             #if self.debug:
             #    template = template + '_d'
-            pythonlib = (template %
-                   (sys.hexversion >> 24, (sys.hexversion >> 16) & 0xff))
-            # don't extend ext.libraries, it may be shared with other
-            # extensions, it is a reference to the original list
-            return ext.libraries + [pythonlib]
-        elif sys.platform[:6] == "cygwin":
-            template = "python%d.%d"
             pythonlib = (template %
                    (sys.hexversion >> 24, (sys.hexversion >> 16) & 0xff))
             # don't extend ext.libraries, it may be shared with other

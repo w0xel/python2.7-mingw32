@@ -27,13 +27,13 @@ _INSTALL_SCHEMES = {
         'data'   : '{base}',
         },
     'nt': {
-        'stdlib': '{base}/Lib',
-        'platstdlib': '{base}/Lib',
-        'purelib': '{base}/Lib/site-packages',
-        'platlib': '{base}/Lib/site-packages',
-        'include': '{base}/Include',
-        'platinclude': '{base}/Include',
-        'scripts': '{base}/Scripts',
+        'stdlib': '{base}/lib/python{py_version_short}',
+        'platstdlib': '{base}/lib/python{py_version_short}',
+        'purelib': '{base}/lib/python{py_version_short}',
+        'platlib': '{base}/lib/python{py_version_short}',
+        'include': '{base}/include/python{py_version_short}',
+        'platinclude': '{base}/include/python{py_version_short}',
+        'scripts': '{base}/bin',
         'data'   : '{base}',
         },
     'os2': {
@@ -56,12 +56,12 @@ _INSTALL_SCHEMES = {
         'data'   : '{userbase}',
         },
     'nt_user': {
-        'stdlib': '{userbase}/Python{py_version_nodot}',
-        'platstdlib': '{userbase}/Python{py_version_nodot}',
-        'purelib': '{userbase}/Python{py_version_nodot}/site-packages',
-        'platlib': '{userbase}/Python{py_version_nodot}/site-packages',
-        'include': '{userbase}/Python{py_version_nodot}/Include',
-        'scripts': '{userbase}/Scripts',
+        'stdlib': '{userbase}/lib/python{py_version_short}',
+        'platstdlib': '{userbase}/lib/python{py_version_short}',
+        'purelib': '{userbase}/lib/python{py_version_short}',
+        'platlib': '{userbase}/lib/python{py_version_short}',
+        'include': '{userbase}/include/python{py_version_short}',
+        'scripts': '{userbase}/bin',
         'data'   : '{userbase}',
         },
     'posix_user': {
@@ -93,6 +93,10 @@ _PREFIX = os.path.normpath(sys.prefix)
 _EXEC_PREFIX = os.path.normpath(sys.exec_prefix)
 _CONFIG_VARS = None
 _USER_BASE = None
+
+# GCC[mingw*] use posix build system
+_POSIX_BUILD = os.name == 'posix' or \
+    (os.name == "nt" and 'GCC' in sys.version)
 
 def _safe_realpath(path):
     try:
@@ -167,7 +171,7 @@ def _expand_vars(scheme, vars):
     return res
 
 def _get_default_scheme():
-    if os.name == 'posix':
+    if _POSIX_BUILD:
         # the default scheme for posix is posix_prefix
         return 'posix_prefix'
     return os.name
@@ -178,7 +182,7 @@ def _getuserbase():
         return os.path.expanduser(os.path.join(*args))
 
     # what about 'os2emx', 'riscos' ?
-    if os.name == "nt":
+    if os.name == "nt" and not _POSIX_BUILD:
         base = os.environ.get("APPDATA") or "~"
         return env_base if env_base else joinuser(base, "Python")
 
@@ -236,6 +240,7 @@ def _parse_makefile(filename, vars=None):
                     done[n] = v
 
     # do variable interpolation here
+    done['prefix']='${SYS_PREFIX}'
     while notdone:
         for name in notdone.keys():
             value = notdone[name]
@@ -273,6 +278,14 @@ def _parse_makefile(filename, vars=None):
         if isinstance(v, str):
             done[k] = v.strip()
 
+    # any keys that have one with the same name suffixed with _b2h
+    # need to be replaced with the value of the _b2h key.
+    # This converts from MSYS*/Cygwin paths to Windows paths.
+    for k, v in done.items():
+        if isinstance(k, str):
+            if k.endswith("_b2h"):
+                done[k[:-4]]=v
+ 
     # save the results in the global dictionary
     vars.update(done)
     return vars
@@ -351,6 +364,19 @@ def _generate_posix_vars():
         f.write('build_time_vars = ')
         pprint.pprint(vars, stream=f)
 
+    # Now reload the file and replace:
+    replacements = {": '${SYS_PREFIX}'" : ": sys.prefix",
+                    ": '${SYS_PREFIX}"  : ": sys.prefix + '",
+                     "${SYS_PREFIX}'" : "' + sys.prefix",
+                     "${SYS_PREFIX}"  : "' + sys.prefix + '"}
+
+    contents = open(destfile).read()
+    for rep in replacements.keys():
+        contents = contents.replace(rep, replacements[rep])
+    with open(destfile, 'wb') as f:
+        f.write('import sys\n')
+        f.write(contents)
+
     # Create file used for sys.path fixup -- see Modules/getpath.c
     with open('pybuilddir.txt', 'w') as f:
         f.write(pybuilddir)
@@ -369,7 +395,7 @@ def _init_non_posix(vars):
     vars['INCLUDEPY'] = get_path('include')
     vars['SO'] = '.pyd'
     vars['EXE'] = '.exe'
-    vars['VERSION'] = _PY_VERSION_SHORT_NO_DOT
+    vars['VERSION'] = _PY_VERSION_SHORT
     vars['BINDIR'] = os.path.dirname(_safe_realpath(sys.executable))
 
 #
@@ -409,7 +435,7 @@ def parse_config_h(fp, vars=None):
 def get_config_h_filename():
     """Returns the path of pyconfig.h."""
     if _PYTHON_BUILD:
-        if os.name == "nt":
+        if os.name == "nt" and not _POSIX_BUILD:
             inc_dir = os.path.join(_PROJECT_BASE, "PC")
         else:
             inc_dir = _PROJECT_BASE
@@ -471,9 +497,9 @@ def get_config_vars(*args):
         _CONFIG_VARS['platbase'] = _EXEC_PREFIX
         _CONFIG_VARS['projectbase'] = _PROJECT_BASE
 
-        if os.name in ('nt', 'os2'):
+        if os.name in ('nt', 'os2') and not _POSIX_BUILD:
             _init_non_posix(_CONFIG_VARS)
-        if os.name == 'posix':
+        if _POSIX_BUILD:
             _init_posix(_CONFIG_VARS)
 
         # Setting 'userbase' is done below the call to the
@@ -488,7 +514,7 @@ def get_config_vars(*args):
         # Normally it is relative to the build directory.  However, during
         # testing, for example, we might be running a non-installed python
         # from a different directory.
-        if _PYTHON_BUILD and os.name == "posix":
+        if _PYTHON_BUILD and _POSIX_BUILD:
             base = _PROJECT_BASE
             try:
                 cwd = os.getcwd()
@@ -551,6 +577,8 @@ def get_platform():
     """
     import re
     if os.name == 'nt':
+        if 'GCC' in sys.version:
+            return 'mingw'
         # sniff sys.version for architecture.
         prefix = " bit ("
         i = sys.version.find(prefix)

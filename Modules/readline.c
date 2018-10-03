@@ -6,6 +6,7 @@
 
 /* Standard definitions */
 #include "Python.h"
+#include "iscygpty.h"
 #include <setjmp.h>
 #include <signal.h>
 #include <errno.h>
@@ -1205,6 +1206,11 @@ PyMODINIT_FUNC
 initreadline(void)
 {
     PyObject *m;
+
+    if (!is_cygpty(STDOUT_FILENO)) {
+        PyErr_SetString(PyExc_ImportError, "Not a cygwin terminal");
+        return;
+    }
 
 #ifdef __APPLE__
     if (strncmp(rl_library_version, libedit_version_tag, strlen(libedit_version_tag)) == 0) {

@@ -2,6 +2,7 @@
 
 #include "Python.h"
 #include "Python-ast.h"
+#include "iscygpty.h"
 
 #include "node.h"
 #include "code.h"

@@ -3,6 +3,7 @@
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 #include "structmember.h"
+#include "iscygpty.h"
 
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -996,7 +997,7 @@ file_isatty(PyFileObject *f)
     if (f->f_fp == NULL)
         return err_closed();
     FILE_BEGIN_ALLOW_THREADS(f)
-    res = isatty((int)fileno(f->f_fp));
+    res = isatty((int)fileno(f->f_fp)) || is_cygpty((int)fileno(f->f_fp));
     FILE_END_ALLOW_THREADS(f)
     return PyBool_FromLong(res);
 }

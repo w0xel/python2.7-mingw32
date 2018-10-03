@@ -18,6 +18,7 @@
 #include "eval.h"
 #include "marshal.h"
 #include "abstract.h"
+#include "iscygpty.h"
 
 #ifdef HAVE_SIGNAL_H
 #include <signal.h>
@@ -675,13 +676,67 @@ Py_EndInterpreter(PyThreadState *tstate)
     PyInterpreterState_Delete(interp);
 }
 
-static char *progname = "python";
+ static char progname[PATH_MAX+1] = "python";
+ 
+char
+Py_GetSepA(char *name)
+{
+    char* msystem = (char*)2; /* So that non Windows use / as sep */
+    static char sep = '\0';
+#ifdef _WIN32
+    /* https://msdn.microsoft.com/en-gb/library/windows/desktop/aa365247%28v=vs.85%29.aspx
+     * The "\\?\" prefix .. indicate that the path should be passed to the system with minimal
+     * modification, which means that you cannot use forward slashes to represent path separators
+     */
+    if (name != NULL && memcmp(name, "\\\\?\\", sizeof("\\\\?\\") - sizeof(char)) == 0)
+    {
+        return '\\';
+    }
+#endif
+    if (sep != '\0')
+        return sep;
+#if defined(__MINGW32__)
+    msystem = Py_GETENV("MSYSTEM");
+#endif
+    if (msystem != NULL)
+        sep = '/';
+    else
+        sep = '\\';
+    return sep;
+}
+
+static wchar_t
+Py_GetAltSepA(char *name)
+{
+    char sep = Py_GetSepA(name);
+    if (sep == '/')
+        return '\\';
+    return '/';
+}
 
 void
-Py_SetProgramName(char *pn)
+Py_NormalizeSepsA(char *name)
 {
-    if (pn && *pn)
-        progname = pn;
+    char sep = Py_GetSepA(name);
+    char altsep = Py_GetAltSepA(name);
+    char* seps;
+    if (strlen(name) > 1 && name[1] == ':') {
+        name[0] = toupper(name[0]);
+    }
+    seps = strchr(name, altsep);
+    while(seps) {
+        *seps = sep;
+        seps = strchr(seps, altsep);
+    }
+}
+
+ void
+ Py_SetProgramName(char *pn)
+ {
+     if (pn && *pn)
+         strncpy(progname, pn, PATH_MAX);
+     pn = &progname[0];
+    Py_NormalizeSepsA(pn);
 }
 
 char *
@@ -1822,7 +1877,7 @@ initsigs(void)
 int
 Py_FdIsInteractive(FILE *fp, const char *filename)
 {
-    if (isatty((int)fileno(fp)))
+    if (isatty((int)fileno(fp)) || is_cygpty((int)fileno(fp)))
         return 1;
     if (!Py_InteractiveFlag)
         return 0;

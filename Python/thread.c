@@ -8,6 +8,12 @@
 #include "Python.h"
 
 
+#ifdef __MINGW32__
+# if !defined(HAVE_PTHREAD_H) || defined(NT_THREADS)
+#  undef _POSIX_THREADS
+# endif
+#endif
+
 #ifndef _POSIX_THREADS
 /* This means pthreads are not implemented in libc headers, hence the macro
    not present in unistd.h. But they still can be implemented as an external

@@ -16,6 +16,7 @@
 #endif
 #include <stddef.h> /* For offsetof */
 #include "_iomodule.h"
+#include "iscygpty.h"
 
 /*
  * Known likely problems:
@@ -989,7 +990,7 @@ fileio_isatty(fileio *self)
     if (self->fd < 0)
         return err_closed();
     Py_BEGIN_ALLOW_THREADS
-    res = isatty(self->fd);
+    res = isatty(self->fd) || is_cygpty(self->fd);
     Py_END_ALLOW_THREADS
     return PyBool_FromLong(res);
 }

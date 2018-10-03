@@ -62,6 +62,16 @@ def get_python_version():
     """
     return sys.version[:3]
 
+def _posix_build():
+    # GCC[mingw*] use posix build system
+    # Check for cross builds explicitly
+    host_platform = os.environ.get("_PYTHON_HOST_PLATFORM")
+    if host_platform:
+        if host_platform.startswith('mingw'):
+            return True
+    return os.name == 'posix' or \
+        (os.name == "nt" and 'GCC' in sys.version)
+posix_build = _posix_build()
 
 def get_python_inc(plat_specific=0, prefix=None):
     """Return the directory containing installed Python header files.
@@ -77,7 +87,7 @@ def get_python_inc(plat_specific=0, prefix=None):
     if prefix is None:
         prefix = plat_specific and EXEC_PREFIX or PREFIX
 
-    if os.name == "posix":
+    if posix_build:
         if python_build:
             buildir = os.path.dirname(sys.executable)
             if plat_specific:
@@ -118,7 +128,7 @@ def get_python_lib(plat_specific=0, standard_lib=0, prefix=None):
     if prefix is None:
         prefix = plat_specific and EXEC_PREFIX or PREFIX
 
-    if os.name == "posix":
+    if posix_build:
         libpython = os.path.join(prefix,
                                  "lib", "python" + get_python_version())
         if standard_lib:
@@ -154,7 +164,23 @@ def customize_compiler(compiler):
     Mainly needed on Unix, so we can plug in the information that
     varies across Unices and is stored in Python's Makefile.
     """
-    if compiler.compiler_type == "unix":
+    global _config_vars
+    if compiler.compiler_type in ["cygwin", "mingw32"]:
+        # Note that cygwin use posix build and 'unix' compiler.
+        # If build is not based on posix then we must predefine
+        # some environment variables corresponding to posix
+        # build rules and defaults.
+        if not 'GCC' in sys.version:
+            _config_vars['CC'] = "gcc"
+            _config_vars['CXX'] = "g++"
+            _config_vars['OPT'] = "-fwrapv -O3 -Wall -Wstrict-prototypes"
+            _config_vars['CFLAGS'] = ""
+            _config_vars['CCSHARED'] = ""
+            _config_vars['LDSHARED'] = "gcc -shared -Wl,--enable-auto-image-base"
+            _config_vars['AR'] = "ar"
+            _config_vars['ARFLAGS'] = "rc"
+
+    if compiler.compiler_type in ["unix", "cygwin", "mingw32"]:
         if sys.platform == "darwin":
             # Perform first-time customization of compiler-related
             # config vars on OS X now that we know we need a compiler.
@@ -164,7 +190,6 @@ def customize_compiler(compiler):
             # that Python itself was built on.  Also the user OS
             # version and build tools may not support the same set
             # of CPU architectures for universal builds.
-            global _config_vars
             # Use get_config_var() to ensure _config_vars is initialized.
             if not get_config_var('CUSTOMIZED_OSX_COMPILER'):
                 import _osx_support
@@ -225,7 +250,7 @@ def customize_compiler(compiler):
 def get_config_h_filename():
     """Return full pathname of installed pyconfig.h file."""
     if python_build:
-        if os.name == "nt":
+        if os.name == "nt" and not posix_build:
             inc_dir = os.path.join(project_base, "PC")
         else:
             inc_dir = project_base
@@ -402,6 +427,9 @@ def _init_posix():
 
 
 def _init_nt():
+    if posix_build:
+        _init_posix()
+        return
     """Initialize the module as appropriate for NT"""
     g = {}
     # set basic install directories

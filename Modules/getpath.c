@@ -10,6 +10,10 @@
 #include <mach-o/dyld.h>
 #endif
 
+#ifdef MS_WINDOWS
+#include <windows.h>
+#endif
+
 /* Search in some common locations for the associated Python libraries.
  *
  * Two directories must be found, the platform independent directory
@@ -106,7 +110,11 @@
 
 static char prefix[MAXPATHLEN+1];
 static char exec_prefix[MAXPATHLEN+1];
-static char progpath[MAXPATHLEN+1];
+static char progpath[MAXPATHLEN+1]  = {'\0'};
+#ifdef MS_WINDOWS
+static char dllpath[MAXPATHLEN+1] = {'\0'};
+extern HANDLE PyWin_DLLhModule;
+#endif
 static char *module_search_path = NULL;
 static char lib_python[] = "lib/python" VERSION;
 
@@ -116,7 +124,7 @@ reduce(char *dir)
     size_t i = strlen(dir);
     while (i > 0 && dir[i] != SEP)
         --i;
-    dir[i] = '\0';
+    dir[i] = 0;
 }
 
 
@@ -187,7 +195,11 @@ static void
 joinpath(char *buffer, char *stuff)
 {
     size_t n, k;
+#ifdef MS_WINDOWS
+    if (stuff[0] == SEP || (stuff[0] != 0 && stuff[1] == ':'))
+#else
     if (stuff[0] == SEP)
+#endif
         n = 0;
     else {
         n = strlen(buffer);
@@ -208,7 +220,11 @@ joinpath(char *buffer, char *stuff)
 static void
 copy_absolute(char *path, char *p)
 {
+#ifdef MS_WINDOWS
+    if (p[0] == SEP || (p[0] != 0 && p[1] == ':'))
+#else
     if (p[0] == SEP)
+#endif
         strcpy(path, p);
     else {
         if (!getcwd(path, MAXPATHLEN)) {
@@ -228,7 +244,11 @@ absolutize(char *path)
 {
     char buffer[MAXPATHLEN + 1];
 
+#ifdef MS_WINDOWS
+    if (path[0] == SEP || (path[0] != 0 && path[1] == ':'))
+#else
     if (path[0] == SEP)
+#endif
         return;
     copy_absolute(buffer, path);
     strcpy(path, buffer);
@@ -359,6 +379,35 @@ search_for_exec_prefix(char *argv0_path, char *home)
 }
 
 
+#ifdef MS_WINDOWS
+/* Calculates dllpath and progpath, replacing \\ with / */
+int GetWindowsModulePaths()
+{
+    int result = 0;
+    char* seps;
+    result = GetModuleFileNameA(NULL, progpath, MAXPATHLEN);
+    seps = strchr(progpath, '\\');
+    while(seps) {
+        *seps = '/';
+        seps = strchr(seps, '\\');
+    }
+    dllpath[0] = '\0';
+#ifdef Py_ENABLE_SHARED
+    if (PyWin_DLLhModule) {
+        if((GetModuleFileNameA(PyWin_DLLhModule, dllpath, MAXPATHLEN) > 0)) {
+            result = 1;
+            seps = strchr(dllpath, '\\');
+            while(seps) {
+                *seps = '/';
+                seps = strchr(seps, '\\');
+            }
+        }
+    }
+#endif
+    return result;
+}
+#endif /* MS_WINDOWS */
+
 static void
 calculate_path(void)
 {
@@ -410,6 +459,10 @@ calculate_path(void)
      else if(0 == _NSGetExecutablePath(progpath, &nsexeclength) && progpath[0] == SEP)
        ;
 #endif /* __APPLE__ */
+#ifdef MS_WINDOWS
+    else if(GetWindowsModulePaths()) {
+    }
+#endif /* MS_WINDOWS */
         else if (path) {
                 while (1) {
                         char *delim = strchr(path, DELIM);
@@ -437,7 +490,11 @@ calculate_path(void)
         }
         else
                 progpath[0] = '\0';
+#ifdef MS_WINDOWS
+        if (progpath[0] != '\0' && progpath[0] != SEP && progpath[1] != ':')
+#else
         if (progpath[0] != SEP && progpath[0] != '\0')
+#endif
                 absolutize(progpath);
         strncpy(argv0_path, progpath, MAXPATHLEN);
         argv0_path[MAXPATHLEN] = '\0';
@@ -565,7 +622,10 @@ calculate_path(void)
 
     bufsz += strlen(zip_path) + 1;
     bufsz += strlen(exec_prefix) + 1;
-
+#ifdef MS_WINDOWS
+    if (EXEC_PREFIX)
+        bufsz += strlen(EXEC_PREFIX) + 1;
+#endif
     /* This is the only malloc call in this file */
     buf = (char *)PyMem_Malloc(bufsz);
 
@@ -649,6 +709,34 @@ calculate_path(void)
     }
     else
         strncpy(exec_prefix, EXEC_PREFIX, MAXPATHLEN);
+#ifdef MS_WINDOWS
+    if (EXEC_PREFIX) {
+        /* Next add bin folder where the exe was found, for System DLLs e.g. tcl86.dll, tk86.dll */
+        strcat(buf, delimiter);
+        strcat(buf, EXEC_PREFIX);
+      }
+    if (path) {
+        /* Add path of executable/dll to system path. This
+         * is so that the correct tcl??.dll and tk??.dll get
+         * used. */
+        char *module_path = dllpath[0] ? dllpath : progpath;
+        char *new_path = alloca(strlen("PATH=")+strlen(module_path)+1+strlen(path)+1);
+        if (new_path) {
+            strcpy( new_path, "PATH=" );
+            strcat( new_path, module_path );
+            char *slashes = strchr( new_path, '/' );
+            while (slashes) {
+                *slashes = '\\';
+                slashes = strchr( slashes+1, '/' );
+            }
+            char *end = strrchr(new_path, '\\') ? strrchr(new_path, '\\') : new_path + strlen(new_path);
+            end[0] = ';';
+            end[1] = '\0';
+            strcat( new_path, path );
+            _putenv( new_path );
+        }
+    }
+#endif
 }
 
 

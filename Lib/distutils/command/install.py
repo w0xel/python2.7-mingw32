@@ -32,10 +32,10 @@ if sys.version < "2.2":
     }
 else:
     WINDOWS_SCHEME = {
-        'purelib': '$base/Lib/site-packages',
-        'platlib': '$base/Lib/site-packages',
-        'headers': '$base/Include/$dist_name',
-        'scripts': '$base/Scripts',
+        'purelib': '$base/lib/python$py_version_short/site-packages',
+        'platlib': '$base/lib/python$py_version_short/site-packages',
+        'headers': '$base/include/python$py_version_short/$dist_name',
+        'scripts': '$base/bin',
         'data'   : '$base',
     }
 
@@ -65,8 +65,8 @@ INSTALL_SCHEMES = {
     'nt_user': {
         'purelib': '$usersite',
         'platlib': '$usersite',
-        'headers': '$userbase/Python$py_version_nodot/Include/$dist_name',
-        'scripts': '$userbase/Scripts',
+        'headers': '$userbase/include/python$py_version_short/$dist_name',
+        'scripts': '$userbase/bin',
         'data'   : '$userbase',
         },
     'os2': {
@@ -348,7 +348,8 @@ class install (Command):
 
         # Convert directories from Unix /-separated syntax to the local
         # convention.
-        self.convert_paths('lib', 'purelib', 'platlib',
+        self.convert_paths('base', 'platbase',
+                           'lib', 'purelib', 'platlib',
                            'scripts', 'data', 'headers',
                            'userbase', 'usersite')
 

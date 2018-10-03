@@ -446,7 +446,9 @@ class LibraryLoader(object):
 cdll = LibraryLoader(CDLL)
 pydll = LibraryLoader(PyDLL)
 
-if _os.name in ("nt", "ce"):
+if _os.name == "nt" and _sys.version.find('GCC') >= 0:
+    pythonapi = PyDLL("libpython%d.%d.dll" % _sys.version_info[:2], None)
+elif _os.name in ("nt", "ce"):
     pythonapi = PyDLL("python dll", None, _sys.dllhandle)
 elif _sys.platform == "cygwin":
     pythonapi = PyDLL("libpython%d.%d.dll" % _sys.version_info[:2])
