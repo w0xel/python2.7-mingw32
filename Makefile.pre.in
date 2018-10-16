@@ -873,7 +873,7 @@ $(LIBRARY_OBJS) $(MODOBJS) Modules/python.o: $(PYTHON_HEADERS)
 
 TESTOPTS=	-l $(EXTRATESTOPTS)
 TESTPROG=	$(srcdir)/Lib/test/regrtest.py
-TESTPYTHON=	$(RUNSHARED) $(WINE) ./$(BUILDPYTHON) -Wd -3 -E -tt $(TESTPYTHONOPTS)
+TESTPYTHON=	$(RUNSHARED) $(WINE) ./$(BUILDPYTHON) -Wd -3 -tt $(TESTPYTHONOPTS)
 test:		@DEF_MAKE_RULE@ platform
 		-find $(srcdir)/Lib -name '*.py[co]' -print | xargs rm -f
 		-$(TESTPYTHON) $(TESTPROG) $(TESTOPTS)
