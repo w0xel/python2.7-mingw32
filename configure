@@ -3299,6 +3299,9 @@ then
 	*-*-cygwin*)
 		ac_sys_system=Cygwin
 		;;
+	*-*-mingw32*)
+		ac_sys_system=Mingw32
+		;;
 	*)
 		# for now, limit cross builds to known configurations
 		MACHDEP="unknown"
@@ -3344,6 +3347,9 @@ if test "$cross_compiling" = yes; then
 		;;
 	*-*-cygwin*)
 		_host_cpu=
+		;;
+	*-*-mingw32*)
+		_host_cpu=$host_cpu
 		;;
 	*)
 		# for now, limit cross builds to known configurations
