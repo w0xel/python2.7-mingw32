@@ -955,12 +955,14 @@ AC_SUBST(BLDLIBRARY)
 AC_SUBST(LDLIBRARYDIR)
 AC_SUBST(INSTSONAME)
 AC_SUBST(RUNSHARED)
+AC_SUBST(WINE)
 LDLIBRARY="$LIBRARY"
 BLDLIBRARY='$(LDLIBRARY)'
 INSTSONAME='$(LDLIBRARY)'
 DLLLIBRARY=''
 LDLIBRARYDIR=''
 RUNSHARED=''
+WINE=''
 
 # LINKCC is the command that links the python executable -- default is $(CC).
 # If CXX is set, and if it is needed to link a main function that was
@@ -1124,10 +1126,11 @@ if test $enable_shared = "yes"; then
   esac
   case $host in
     *-*-mingw*)
-        LDLIBRARY='libpython$(VERSION).dll.a'
-        DLLLIBRARY='libpython$(VERSION).dll'
-        BLDLIBRARY='-L. -lpython$(VERSION)'
-        ;;
+          LDLIBRARY='libpython$(VERSION).dll.a'
+          DLLLIBRARY='libpython$(VERSION).dll'
+          BLDLIBRARY='-L. -lpython$(VERSION)'
+          WINE="PYTHONHOME=$(winepath -w `pwd`/Lib) PYTHONPATH=$(winepath -w `pwd`/Lib) wine"  
+          ;;
   esac
 else # shared is disabled
   PY_ENABLE_SHARED=0
@@ -1147,7 +1150,15 @@ LIBPL="${prefix}"/lib/python"${VERSION}"/config
 AC_SUBST(LIBPL)
 
 if test "$cross_compiling" = yes; then
-	RUNSHARED=
+  case $host in
+    *-*-mingw*)
+          LDLIBRARY='libpython$(VERSION).dll'
+          RUNSHARED="LD_LIBRARY_PATH=`pwd`${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        ;;
+    *)
+        RUNSHARED=
+        ;;
+  esac
 fi
 
 AC_MSG_RESULT($LDLIBRARY)
