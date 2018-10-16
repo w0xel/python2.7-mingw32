@@ -1129,7 +1129,7 @@ if test $enable_shared = "yes"; then
           LDLIBRARY='libpython$(VERSION).dll.a'
           DLLLIBRARY='libpython$(VERSION).dll'
           BLDLIBRARY='-L. -lpython$(VERSION)'
-          WINE="PYTHONHOME=$(winepath -w `pwd`) PYTHONPATH=$(pushd .. >/dev/null; winepath -w `pwd`/../Lib; popd >/dev/null)\;$(winepath -w `pwd`/build/lib.mingw-2.7) wine"   
+          WINE="PYTHONHOME=$(winepath -w `pwd`) PYTHONPATH=$(pushd .. >/dev/null; winepath -w `pwd`/Lib; popd >/dev/null)\;$(winepath -w `pwd`/build/lib.mingw-2.7) wine"   
           ;;
   esac
 else # shared is disabled
