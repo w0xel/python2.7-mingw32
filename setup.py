@@ -2173,7 +2173,7 @@ class PyBuildExt(build_ext):
                 if not self.verbose:
                     config_args.append("-q")
 
-                if host_platform in ['mingw', 'win32']:
+                if host_platform in ['mingw', 'win32'] and os.name != 'posix':
                     table = str.maketrans('\\', '/')
                     ffi_builddir = ffi_builddir.translate(table)
                     ffi_srcdir = ffi_srcdir.translate(table)
