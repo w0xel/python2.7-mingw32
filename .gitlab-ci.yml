@@ -1,0 +1,15 @@
+image: w0xel/mxe
+
+build:
+  stage: build
+  script:
+    - export CFLAGS="-fwrapv -D__USE_MINGW_ANSI_STDIO=1 -DDEBUG -DPy_DEBUG -D_DEBUG"
+    - export CXXFLAGS="$CFLAGS"
+    - export PATH="/mxe/usr/bin:$PATH"
+    - export CONFIG_SITE="../config.site"
+    - autoreconf -vfi
+    - mkdir -p build && cd build
+    - MACHDEP=MINGW ../configure --prefix=/mxe/usr/i686-w64-mingw32.shared --host=i686-w64-mingw32.shared --build=x86_64-linux-gnu --with-threads=yes --enable-shared --with-pydebug --with-system-ffi --with-system-expat
+    - make
+    - export WINEPATH="/mxe/usr/i686-w64-mingw32.shared/bin"
+    - make test
