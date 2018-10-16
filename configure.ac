@@ -1129,7 +1129,7 @@ if test $enable_shared = "yes"; then
           LDLIBRARY='libpython$(VERSION).dll.a'
           DLLLIBRARY='libpython$(VERSION).dll'
           BLDLIBRARY='-L. -lpython$(VERSION)'
-          WINE="PYTHONHOME=$(winepath -w `pwd`/Lib) PYTHONPATH=$(winepath -w `pwd`/Lib) wine"  
+          WINE="PYTHONHOME=$(winepath -w `pwd`) PYTHONPATH=$(winepath -w `pwd`/../Lib)\;$(winepath -w `pwd`/build/lib.mingw-2.7) wine"   
           ;;
   esac
 else # shared is disabled
@@ -1152,7 +1152,7 @@ AC_SUBST(LIBPL)
 if test "$cross_compiling" = yes; then
   case $host in
     *-*-mingw*)
-          LDLIBRARY='libpython$(VERSION).dll'
+          LDLIBRARY='libpython$(VERSION).dll.a'
           RUNSHARED="LD_LIBRARY_PATH=`pwd`${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
         ;;
     *)
