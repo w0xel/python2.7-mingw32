@@ -21,6 +21,7 @@
 @USE_WIN32_MODULE@operator operator.c	# operator.add() and similar goodies
 @USE_WIN32_MODULE@_locale _localemodule.c	# -lintl
 @USE_WIN32_MODULE@time timemodule.c
+@USE_WIN32_MODULE@datetime datetimemodule.c
 @USE_WIN32_MODULE@msvcrt ../PC/msvcrtmodule.c
 
 # The rest of the modules previously listed in this file are built
