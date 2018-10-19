@@ -257,8 +257,9 @@ class PyBuildExt(build_ext):
 
             # If a module has already been built statically,
             # don't build it here
-            if ext.name in sys.builtin_module_names:
-                self.extensions.remove(ext)
+            if host_platform not in ['mingw']:
+                if ext.name in sys.builtin_module_names:
+                    self.extensions.remove(ext)
 
         # Parse Modules/Setup and Modules/Setup.local to figure out which
         # modules are turned on in the file.
@@ -867,7 +868,7 @@ class PyBuildExt(build_ext):
 
         # socket(2)
         _socket_libs = math_libs
-        if host_platform == 'win32':
+        if host_platform in ['win32', 'mingw']:
             _socket_libs.append('ws2_32')
         exts.append( Extension('_socket', ['socketmodule.c', 'timemodule.c'],
                                depends=['socketmodule.h'],
