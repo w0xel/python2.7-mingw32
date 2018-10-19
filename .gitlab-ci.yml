@@ -12,4 +12,3 @@ build:
     - MACHDEP=MINGW ../configure --prefix=/mxe/usr/i686-w64-mingw32.shared --host=i686-w64-mingw32.shared --build=x86_64-linux-gnu --with-threads=yes --enable-shared --with-pydebug --with-system-ffi --with-system-expat
     - make
     - export WINEPATH="/mxe/usr/i686-w64-mingw32.shared/bin"
-    - make test
