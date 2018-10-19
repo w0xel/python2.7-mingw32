@@ -12,7 +12,7 @@ build:
     - MACHDEP=MINGW ../configure --prefix=/usr --host=i686-w64-mingw32.shared --build=x86_64-linux-gnu --with-threads=yes --enable-shared --with-pydebug --with-system-ffi --with-system-expat
     - make
     - export WINEPATH="/mxe/usr/i686-w64-mingw32.shared/bin"
-    - make DESTDIR=$PWD/.. install || make DESTDIR=$PWD install
+    - make DESTDIR=$PWD/.. install || make DESTDIR=$PWD/.. install
   artifacts:
     paths:
       - usr/*
